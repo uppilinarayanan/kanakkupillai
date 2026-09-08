@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1">
+<title>Kanakkupillai — Expense Tracker</title>
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0F1115">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kanakkupillai">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app">
+  <div class="topbar">
+    <h1>Kanakkupillai</h1>
+    <div class="sub">Personal expense tracker</div>
+  </div>
+
+  <div class="screen active" id="screen-home"></div>
+  <div class="screen" id="screen-add"></div>
+  <div class="screen" id="screen-history"></div>
+  <div class="screen" id="screen-charts"></div>
+  <div class="screen" id="screen-settings"></div>
+  <div class="screen" id="screen-import"></div>
+
+  <div class="toast" id="toast"></div>
+
+  <nav class="tabbar">
+    <button class="tab active" data-screen="home">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11L12 4l8 7"/><path d="M6 9.5V20h12V9.5"/><path d="M10 20v-6h4v6"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="tab" data-screen="history">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg>
+      <span>History</span>
+    </button>
+    <button class="tab tab-fab" data-screen="add" aria-label="Add">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+    <button class="tab" data-screen="charts">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16v-4M12 16V8M17 16v-7"/></svg>
+      <span>Charts</span>
+    </button>
+    <button class="tab" data-screen="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10M17 6h.01M4 12h4M11 12h9M4 18h10M17 18h.01"/><circle cx="14" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="14" cy="18" r="2"/></svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@2.16.105/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.4/dist/xlsx.full.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
