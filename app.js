@@ -21,9 +21,12 @@ function saveJSON(key, value) { localStorage.setItem(key, JSON.stringify(value))
 
 function getExpenses() { return loadJSON(STORAGE_KEYS.expenses, []); }
 function setExpenses(list) { saveJSON(STORAGE_KEYS.expenses, list); }
+// Deleted transactions are kept as tombstones (deleted:true) rather than removed outright,
+// so a deletion can sync to the other device instead of being silently resurrected on merge.
+function getActiveExpenses() { return getExpenses().filter(e => !e.deleted); }
 
 function getBudgets() { return loadJSON(STORAGE_KEYS.budgets, { overall: null, categories: {} }); }
-function setBudgets(b) { saveJSON(STORAGE_KEYS.budgets, b); }
+function setBudgets(b) { b.updatedAt = Date.now(); saveJSON(STORAGE_KEYS.budgets, b); pushMetaToCloud(); }
 
 // Categories are stored per-type. Older data (a flat array) is treated as the expense list.
 function getCategories(type) {
@@ -36,7 +39,9 @@ function setCategories(type, list) {
   const raw = loadJSON(STORAGE_KEYS.categories, null);
   const normalized = (raw && !Array.isArray(raw)) ? raw : { expense: Array.isArray(raw) ? raw : DEFAULT_CATEGORIES.expense.slice() };
   normalized[type] = list;
+  normalized.updatedAt = Date.now();
   saveJSON(STORAGE_KEYS.categories, normalized);
+  pushMetaToCloud();
 }
 
 // ===== Utilities =====
@@ -145,7 +150,7 @@ function notifyBudget(msg) {
 
 function checkBudgetsAfterAdd(txn) {
   const budgets = getBudgets();
-  const all = getExpenses();
+  const all = getActiveExpenses();
   const mKey = monthKeyOf(txn.date);
   const monthExpenses = all.filter(e => monthKeyOf(e.date) === mKey && typeOf(e) === 'expense');
 
@@ -163,7 +168,7 @@ function checkBudgetsAfterAdd(txn) {
 
 // ===== Render: Home =====
 function renderHome() {
-  const all = getExpenses();
+  const all = getActiveExpenses();
   const budgets = getBudgets();
   const today = todayISO();
   const mKey = monthKeyOf(today);
@@ -349,15 +354,17 @@ function saveExpenseFromForm() {
 
   if (editingId) {
     const idx = expenses.findIndex(x => x.id === editingId);
-    if (idx > -1) expenses[idx] = { ...expenses[idx], amount, category, note, date, type, fingerprint: makeFingerprint(date, amount, note || category) };
+    if (idx > -1) expenses[idx] = { ...expenses[idx], amount, category, note, date, type, fingerprint: makeFingerprint(date, amount, note || category), updatedAt: Date.now() };
     setExpenses(expenses);
     showToast('Changes saved.');
+    if (idx > -1) pushTransactionToCloud(expenses[idx]);
     editingId = null;
   } else {
-    const txn = { id: uid(), amount, category, note, date, type, fingerprint: makeFingerprint(date, amount, note || category), createdAt: Date.now() };
+    const txn = { id: uid(), amount, category, note, date, type, fingerprint: makeFingerprint(date, amount, note || category), createdAt: Date.now(), updatedAt: Date.now() };
     expenses.push(txn);
     setExpenses(expenses);
     showToast(type === 'income' ? 'Income added.' : 'Expense added.');
+    pushTransactionToCloud(txn);
     if (type === 'expense') checkBudgetsAfterAdd(txn);
   }
 
@@ -373,7 +380,12 @@ function editExpense(id) {
 
 function deleteExpense(id) {
   if (!confirm('Delete this entry?')) return;
-  setExpenses(getExpenses().filter(x => x.id !== id));
+  const expenses = getExpenses();
+  const idx = expenses.findIndex(x => x.id === id);
+  if (idx === -1) return;
+  expenses[idx] = { ...expenses[idx], deleted: true, updatedAt: Date.now() };
+  setExpenses(expenses);
+  pushTransactionToCloud(expenses[idx]);
   renderHistory();
 }
 
@@ -396,7 +408,7 @@ function renderHistory() {
   html += `<div class="chip-row">${catChips}</div>`;
   html += '<button class="small-link" id="exportCsvBtn" style="margin-bottom:16px;display:inline-block;">Export CSV</button>';
 
-  const expenses = getExpenses()
+  const expenses = getActiveExpenses()
     .filter(e => historyType === 'all' || typeOf(e) === historyType)
     .filter(e => historyFilter === 'all' || e.category === historyFilter)
     .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
@@ -419,7 +431,7 @@ function renderHistory() {
 }
 
 function exportCSV() {
-  const expenses = getExpenses().sort((a, b) => a.date.localeCompare(b.date));
+  const expenses = getActiveExpenses().sort((a, b) => a.date.localeCompare(b.date));
   let csv = 'Date,Type,Category,Amount,Note\n';
   expenses.forEach(e => {
     csv += `${e.date},${typeOf(e)},${e.category},${e.amount},"${(e.note || '').replace(/"/g, '""')}"\n`;
@@ -446,7 +458,7 @@ function renderCharts() {
     <div class="chart-wrap"><div style="position:relative;height:220px;"><canvas id="catCanvas"></canvas></div></div>
   `;
 
-  const all = getExpenses();
+  const all = getActiveExpenses();
   const months = [];
   const now = new Date();
   for (let i = 5; i >= 0; i--) {
@@ -601,7 +613,7 @@ function renderSettings() {
 
   document.getElementById('exportJsonBtn').addEventListener('click', () => {
     const data = {
-      expenses: getExpenses(),
+      expenses: getActiveExpenses(),
       budgets: getBudgets(),
       categories: { expense: getCategories('expense'), income: getCategories('income') }
     };
@@ -951,7 +963,7 @@ function guessCategory(description, type) {
 }
 
 function renderImportReview(candidates) {
-  const existing = getExpenses();
+  const existing = getActiveExpenses();
   importCandidates = candidates.map((c, i) => {
     const status = matchExisting(c, existing);
     const type = c.direction === 'credit' ? 'income' : 'expense';
@@ -1033,8 +1045,9 @@ function commitImport() {
   const toAdd = importCandidates.filter(c => c.include);
   if (toAdd.length === 0) { showToast('Nothing selected.'); return; }
   const expenses = getExpenses();
+  const newTxns = [];
   toAdd.forEach(c => {
-    expenses.push({
+    const txn = {
       id: uid(),
       amount: c.amount,
       category: c.category,
@@ -1042,12 +1055,38 @@ function commitImport() {
       date: c.date,
       type: c.type,
       fingerprint: makeFingerprint(c.date, c.amount, c.description),
-      createdAt: Date.now()
-    });
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    expenses.push(txn);
+    newTxns.push(txn);
   });
   setExpenses(expenses);
   showToast(`Imported ${toAdd.length} transaction${toAdd.length === 1 ? '' : 's'}.`);
+  newTxns.forEach(pushTransactionToCloud);
   switchScreen('home');
+}
+
+// ===== Cloud sync bridge (talks to firebase-sync.js, a separate ES module) =====
+// These are deliberately fire-and-forget: if there's no connection, or the Firebase
+// module hasn't loaded, the app carries on working entirely from localStorage as usual.
+function pushTransactionToCloud(txn) {
+  if (window.firebaseSync) window.firebaseSync.pushTransaction(txn);
+}
+function pushMetaToCloud() {
+  if (window.firebaseSync) window.firebaseSync.pushMeta(getBudgets(), loadJSON(STORAGE_KEYS.categories, {}));
+}
+
+async function runInitialSync() {
+  if (!window.firebaseSync) return;
+  const local = { expenses: getExpenses(), budgets: getBudgets(), categories: loadJSON(STORAGE_KEYS.categories, {}) };
+  const result = await window.firebaseSync.syncAll(local);
+  if (!result) return; // offline or sync failed — local data already rendered, nothing more to do
+  setExpenses(result.expenses);
+  saveJSON(STORAGE_KEYS.budgets, result.budgets);
+  saveJSON(STORAGE_KEYS.categories, result.categories);
+  // Re-render whichever screen is currently showing so the merged data appears without a manual reload
+  switchScreen(currentScreen);
 }
 
 // ===== Init =====
@@ -1056,6 +1095,7 @@ function init() {
     tab.addEventListener('click', () => switchScreen(tab.dataset.screen));
   });
   renderHome();
+  runInitialSync();
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});

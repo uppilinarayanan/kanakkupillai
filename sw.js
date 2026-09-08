@@ -1,9 +1,10 @@
-const CACHE_NAME = 'ledger-cache-v8';
+const CACHE_NAME = 'ledger-cache-v9';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './firebase-sync.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
